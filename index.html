@@ -110,6 +110,49 @@ textarea {
   font-weight: 600;
 }
 
+.bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ui);
+  cursor: pointer;
+}
+
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--soft);
+}
+
+.icon-btn:disabled {
+  opacity: .35;
+  cursor: default;
+}
+
+.url-row {
+  display: flex;
+  gap: 6px;
+}
+
+.url-row input {
+  flex: 1;
+  min-width: 0;
+}
+
 .preview-wrap {
   flex: 1;
   min-height: 0;
@@ -585,6 +628,10 @@ input.hex {
     padding: 14px;
   }
 
+  .zoom-part {
+    display: none;
+  }
+
   .panel {
     flex: none;
     width: auto;
@@ -614,10 +661,28 @@ input.hex {
 
       <div class="meta">
         <b id="sizeLabel">1080 × 1920</b> px
-        · <span id="zoomLabel">미리보기 100%</span>
+        <span class="zoom-part">· <span id="zoomLabel">미리보기 100%</span></span>
       </div>
 
-      <button class="primary" id="exportBtn" type="button">PNG 저장</button>
+      <div class="bar-actions">
+
+        <button class="icon-btn" id="undoBtn" type="button" title="되돌리기 (Ctrl+Z)" aria-label="되돌리기" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 14 4 9l5-5"/>
+            <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>
+          </svg>
+        </button>
+
+        <button class="icon-btn" id="redoBtn" type="button" title="다시 실행 (Ctrl+Shift+Z)" aria-label="다시 실행" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m15 14 5-5-5-5"/>
+            <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>
+          </svg>
+        </button>
+
+        <button class="primary" id="exportBtn" type="button">PNG 저장</button>
+
+      </div>
 
     </div>
 
@@ -664,6 +729,7 @@ input.hex {
 <input type="file" id="singleInput" accept="image/*" hidden>
 <input type="file" id="bulkInput" accept="image/*" multiple hidden>
 <input type="file" id="bgInput" accept="image/*" hidden>
+<input type="file" id="jsonInput" accept="application/json,.json" hidden>
 
 
 
@@ -685,7 +751,7 @@ input.hex {
       </div>
     </div>
 
-    <p class="hint">드래그로 위치 이동 · 휠/핀치로 확대. 사진 비율은 그대로 유지돼요.</p>
+    <p class="hint">드래그로 위치 이동 · 휠/핀치로 확대. 사진 비율은 그대로 유지돼요. 이 창을 연 채로 Ctrl+V 하면 복사한 이미지·링크로 교체돼요.</p>
 
     <div class="modal-actions">
       <button class="btn" type="button" id="cropReplace">이미지 교체</button>
@@ -867,11 +933,21 @@ let S = loaded.state;
 
 let saveTimer = 0;
 
+/* 변경이 생길 때마다: 되돌리기 기록 + 브라우저 임시 저장 */
 function saveSoon() {
+  persistSoon();
+  markHistory();
+}
+
+function persistSoon() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) {}
-  }, 300);
+  saveTimer = setTimeout(persistNow, 600);
+}
+
+function persistNow() {
+  clearTimeout(saveTimer);
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) {}
+  saveProject();
 }
 
 function getPath(path) {
@@ -1738,6 +1814,7 @@ async function fillSlots(files, start) {
 
   renderThumbs();
   scheduleRender();
+  saveSoon();
 
   if (imgs.some(img => !img)) alert("일부 이미지를 불러오지 못했어요. JPG · PNG · WEBP 형식을 권장해요.");
 }
@@ -1786,6 +1863,7 @@ singleInput.addEventListener("change", async () => {
   slots[i] = { img, zoom: 1, ox: 0, oy: 0 };
   renderThumbs();
   scheduleRender();
+  saveSoon();
   openCrop(i);
 });
 
@@ -1883,6 +1961,7 @@ function bindThumbs() {
 
       if (over >= 0 && over !== from) {
         [slots[from], slots[over]] = [slots[over], slots[from]];
+        saveSoon();
       }
 
       renderThumbs();
@@ -2053,6 +2132,7 @@ document.getElementById("cropDelete").addEventListener("click", () => {
   closeCrop();
   renderThumbs();
   scheduleRender();
+  saveSoon();
 });
 
 document.getElementById("cropCancel").addEventListener("click", closeCrop);
@@ -2062,6 +2142,7 @@ document.getElementById("cropApply").addEventListener("click", () => {
   closeCrop();
   renderThumbs();
   scheduleRender();
+  saveSoon();
 });
 
 cropModal.addEventListener("pointerdown", e => {
@@ -2106,12 +2187,7 @@ async function exportPNG() {
       link.download = name;
       resultModal.classList.add("open");
     } else {
-      const a = document.createElement("a");
-      a.href = resultURL;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      downloadBlob(blob, name);
     }
   } catch (err) {
     alert("저장하지 못했어요. 다시 시도해 주세요.");
@@ -2229,6 +2305,17 @@ function buildPanel() {
       <p>reCAPTCHA 형태의 이미지 포스터를 만들어 PNG로 저장해요.</p>
     </div>
 
+    ${H.sec("저장 · 불러오기", `
+      <p class="hint" id="saveStatus">작업 내용은 이미지까지 이 브라우저에 자동으로 임시 저장돼요.</p>
+      <div class="btn-row">
+        <button class="btn" type="button" data-act="save-now">지금 임시 저장</button>
+        <button class="btn" type="button" data-act="json-export">JSON으로 저장</button>
+        <button class="btn" type="button" data-act="json-import">JSON 불러오기</button>
+        <button class="btn" type="button" data-act="new">새로 만들기</button>
+      </div>
+      <p class="hint">임시 저장은 이 브라우저에만 남아요. 백업하거나 다른 기기로 옮기려면 JSON으로 저장하세요(이미지 포함).</p>
+    `, false)}
+
     ${H.sec("캔버스 · 배경", `
       ${H.row("비율", H.seg("canvas.preset", [["9:16", "9:16"], ["4:5", "4:5"], ["1:1", "1:1"], ["custom", "직접"]]))}
       ${H.row("출력 크기", `
@@ -2280,6 +2367,11 @@ function buildPanel() {
 
     ${H.sec("이미지 3×3", `
       <button class="btn block" type="button" data-act="bulk">이미지 여러 장 한 번에 올리기 (최대 9장)</button>
+      <div class="url-row">
+        <input type="text" id="urlInput" placeholder="핀터레스트 링크 · 이미지 주소" spellcheck="false" autocomplete="off">
+        <button class="btn" type="button" data-act="url-add">추가</button>
+      </div>
+      <p class="hint" id="urlStatus">pin.it 링크, 핀 주소, 이미지 주소 모두 돼요(여러 개는 띄어서). 이미지를 복사해 Ctrl+V로 붙여넣어도 빈 칸에 들어가요.</p>
       <div class="thumbs" id="thumbs"></div>
       <p class="hint">파일 이름 순으로 1번 칸부터 채워요. 칸을 클릭하면 크롭·교체, 드래그하면 두 칸의 순서가 바뀌어요. 미리보기의 칸을 눌러도 편집할 수 있어요.</p>
     `)}
@@ -2401,6 +2493,19 @@ document.addEventListener("click", e => {
     case "bulk": bulkInput.click(); return;
     case "bg-upload": bgInput.click(); return;
     case "bg-remove": bgImage = null; break;
+    case "save-now": persistNow(); return;
+    case "json-export": exportJSON(); return;
+    case "json-import": jsonInput.click(); return;
+    case "url-add": addLinksFromInput(); return;
+    case "new":
+      if (!confirm("이미지와 설정을 모두 비우고 새로 시작할까요? (되돌리기로 복구할 수 있어요)")) return;
+      if (hist.timer) commitHistory();
+      S = clone(DEFAULTS);
+      slots.forEach((_, i) => { slots[i] = emptySlot(); });
+      bgImage = null;
+      renderThumbs();
+      applyCanvasSize(S.canvas.w, S.canvas.h, S.canvas.preset);
+      break;
     case "reset":
       S = clone(DEFAULTS);
       applyCanvasSize(S.canvas.w, S.canvas.h, S.canvas.preset);
@@ -2457,20 +2562,547 @@ function syncUI(except) {
 
 
 /* ================================
-   시작 (스타일시트 · 폰트 선언이 준비된 뒤)
+   링크 · 붙여넣기로 이미지 넣기
+   - 핀터레스트 이미지 서버는 외부 사이트의 픽셀 읽기를 막아서
+     CORS를 허용하는 공개 이미지 프록시(wsrv.nl)를 거쳐 받음
+   - pin.it 단축 링크는 microlink로 실제 핀 주소를 찾음
 ================================ */
 
-function start() {
-  buildPanel();
+const imageProxy = url => `https://wsrv.nl/?url=${encodeURIComponent(url)}`;
+
+function extractURLs(text) {
+  const urls = text.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+  if (urls.length) return urls;
+  return (text.match(/(?:pin\.it|(?:[\w-]+\.)?pinterest\.[\w.]+)\/[^\s"'<>]+/gi) || []).map(u => `https://${u}`);
+}
+
+function setUrlStatus(text, error = false) {
+  const el = document.getElementById("urlStatus");
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = error ? "#c62828" : "";
+}
+
+async function pinImageURL(pinId) {
+  const r = await fetch(`https://widgets.pinterest.com/v3/pidgets/pins/info/?pin_ids=${pinId}`);
+  const j = await r.json();
+  const pin = j && j.data && j.data[0];
+  if (!pin || !pin.images) return null;
+  const best = Object.values(pin.images).sort((a, b) => b.width - a.width)[0];
+  return best ? best.url : null;
+}
+
+function pinIdOf(url) {
+  const m = url.match(/\/pin\/(?:[^/?#]*?--)?(\d+)/);
+  return m ? m[1] : null;
+}
+
+/* 페이지 링크 → 이미지 주소 */
+async function resolveLink(url) {
+  let u;
+  try { u = new URL(url); } catch (e) { return null; }
+
+  const host = u.hostname.replace(/^www\./, "");
+  const isPinterest = host === "pin.it" || /(^|\.)pinterest\./.test(host);
+
+  if (host === "i.pinimg.com") return url;
+
+  if (isPinterest && pinIdOf(url)) {
+    const img = await pinImageURL(pinIdOf(url)).catch(() => null);
+    if (img) return img;
+  }
+
+  if (isPinterest) {
+    const r = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}`);
+    const j = await r.json();
+    const data = j && j.data;
+    const id = data && data.url && pinIdOf(data.url);
+    if (id) {
+      const img = await pinImageURL(id).catch(() => null);
+      if (img) return img;
+    }
+    return data && data.image ? data.image.url : null;
+  }
+
+  return url;
+}
+
+/* 핀터레스트 이미지는 원본 → 736px → 받은 크기 순으로 시도 */
+function sizeCandidates(url) {
+  const m = url.match(/^https?:\/\/i\.pinimg\.com\/[^/]+\/(.+)$/i);
+  if (!m) return [url];
+  return [`https://i.pinimg.com/originals/${m[1]}`, `https://i.pinimg.com/736x/${m[1]}`, url];
+}
+
+async function fetchImageBlob(url) {
+  const isPinimg = /^https?:\/\/i\.pinimg\.com\//i.test(url);
+
+  for (const c of sizeCandidates(url)) {
+    const sources = isPinimg ? [imageProxy(c)] : [c, imageProxy(c)];
+    for (const src of sources) {
+      try {
+        const r = await fetch(src);
+        if (!r.ok) continue;
+        const b = await r.blob();
+        if (b.type.startsWith("image/")) return b;
+      } catch (e) {}
+    }
+  }
+
+  return null;
+}
+
+/* 빈 칸부터 채움. 크롭 창이 열려 있으면 그 칸을 교체 */
+function placeImages(imgs, target) {
+  if (target >= 0) {
+    slots[target] = { img: imgs[0], zoom: 1, ox: 0, oy: 0 };
+    if (crop.i === target) {
+      crop.zoom = 1;
+      crop.ox = 0;
+      crop.oy = 0;
+      drawCrop();
+    }
+    return { placed: 1, left: imgs.length - 1 };
+  }
+
+  let placed = 0;
+  for (const img of imgs) {
+    const i = slots.findIndex(s => !s.img);
+    if (i < 0) break;
+    slots[i] = { img, zoom: 1, ox: 0, oy: 0 };
+    placed++;
+  }
+  return { placed, left: imgs.length - placed };
+}
+
+function finishPlacing(imgs, failed, target) {
+  if (!imgs.length) {
+    setUrlStatus("이미지를 불러오지 못했어요. 비공개 핀이거나 이미지가 아닌 링크일 수 있어요.", true);
+    return;
+  }
+
+  const { placed, left } = placeImages(imgs, target);
+  renderThumbs();
+  scheduleRender();
+  saveSoon();
+
+  let msg = `${placed}장 넣었어요.`;
+  if (failed) msg += ` ${failed}개는 불러오지 못했어요.`;
+  if (left) msg += ` 빈 칸이 없어 ${left}장은 넣지 못했어요. 칸을 비우거나, 크롭 창을 연 채로 붙여넣으면 그 칸을 교체해요.`;
+  setUrlStatus(msg, !!(failed || left));
+}
+
+let linkBusy = false;
+
+async function addLinks(text, target = -1) {
+  const urls = extractURLs(text);
+
+  if (!urls.length) {
+    setUrlStatus("링크를 찾지 못했어요. 주소 전체를 붙여넣어 주세요.", true);
+    return;
+  }
+  if (linkBusy) return;
+
+  linkBusy = true;
+  setUrlStatus(`불러오는 중… (${urls.length}개)`);
+
+  try {
+    const results = await Promise.all(urls.map(async u => {
+      try {
+        const imgURL = await resolveLink(u);
+        const blob = imgURL ? await fetchImageBlob(imgURL) : null;
+        return blob ? await loadImage(blob, 1600) : null;
+      } catch (e) {
+        return null;
+      }
+    }));
+
+    const imgs = results.filter(Boolean);
+    finishPlacing(imgs, results.length - imgs.length, target);
+  } finally {
+    linkBusy = false;
+  }
+}
+
+function addLinksFromInput() {
+  const input = document.getElementById("urlInput");
+  const text = input.value.trim();
+  if (!text) return;
+  addLinks(text).then(() => { input.value = ""; });
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.id === "urlInput") {
+    e.preventDefault();
+    addLinksFromInput();
+  }
+});
+
+/* Ctrl+V: 복사한 이미지 또는 링크 */
+document.addEventListener("paste", async e => {
+  const el = document.activeElement;
+  const inUrlBox = el && el.id === "urlInput";
+  const typing = el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && (el.type === "text" || el.type === "number")));
+  if (typing && !inUrlBox) return;
+
+  const cd = e.clipboardData;
+  if (!cd) return;
+
+  const target = cropModal.classList.contains("open") ? crop.i : -1;
+  const files = [...cd.items]
+    .filter(it => it.kind === "file" && it.type.startsWith("image/"))
+    .map(it => it.getAsFile())
+    .filter(Boolean);
+
+  if (files.length) {
+    e.preventDefault();
+    const results = await Promise.all(files.map(f => loadImage(f, 1600).catch(() => null)));
+    const imgs = results.filter(Boolean);
+    finishPlacing(imgs, results.length - imgs.length, target);
+    return;
+  }
+
+  if (inUrlBox) return;
+
+  const text = cd.getData("text");
+  if (text && extractURLs(text).length) {
+    e.preventDefault();
+    addLinks(text, target);
+  }
+});
+
+
+/* ================================
+   되돌리기 / 다시 실행
+================================ */
+
+const HISTORY_MAX = 100;
+
+const hist = { stack: [], index: -1, timer: 0 };
+
+const undoBtn = document.getElementById("undoBtn");
+const redoBtn = document.getElementById("redoBtn");
+
+function takeSnapshot() {
+  return {
+    s: JSON.stringify(S),
+    slots: slots.map(x => ({ ...x })),
+    bg: bgImage
+  };
+}
+
+function sameSnapshot(a, b) {
+  return a.s === b.s && a.bg === b.bg && a.slots.every((x, i) => {
+    const y = b.slots[i];
+    return x.img === y.img && x.zoom === y.zoom && x.ox === y.ox && x.oy === y.oy;
+  });
+}
+
+function commitHistory() {
+  clearTimeout(hist.timer);
+  hist.timer = 0;
+
+  const snap = takeSnapshot();
+  const top = hist.stack[hist.index];
+
+  if (!top || !sameSnapshot(top, snap)) {
+    hist.stack.splice(hist.index + 1);
+    hist.stack.push(snap);
+    if (hist.stack.length > HISTORY_MAX) hist.stack.shift();
+    hist.index = hist.stack.length - 1;
+  }
+
+  syncHistoryButtons();
+}
+
+/* 슬라이더 · 타이핑처럼 연속된 변경은 잠시 멈췄을 때 한 단계로 기록 */
+function markHistory() {
+  clearTimeout(hist.timer);
+  hist.timer = setTimeout(commitHistory, 400);
+  syncHistoryButtons();
+}
+
+function restoreSnapshot(snap) {
+  S = merge(DEFAULTS, JSON.parse(snap.s));
+  snap.slots.forEach((x, i) => { slots[i] = { ...x }; });
+  bgImage = snap.bg;
 
   preview.width = S.canvas.w;
   preview.height = S.canvas.h;
 
-  if (!loaded.saved) fitCard();
+  renderThumbs();
+  syncUI();
+  fitPreview();
+  persistSoon();
+}
 
+function undo() {
+  if (hist.timer) commitHistory();
+  if (hist.index <= 0) return;
+  hist.index--;
+  restoreSnapshot(hist.stack[hist.index]);
+  syncHistoryButtons();
+}
+
+function redo() {
+  if (hist.timer) commitHistory();
+  if (hist.index >= hist.stack.length - 1) return;
+  hist.index++;
+  restoreSnapshot(hist.stack[hist.index]);
+  syncHistoryButtons();
+}
+
+function syncHistoryButtons() {
+  undoBtn.disabled = !(hist.index > 0 || (hist.timer && hist.index >= 0));
+  redoBtn.disabled = !!hist.timer || hist.index >= hist.stack.length - 1;
+}
+
+undoBtn.addEventListener("click", undo);
+redoBtn.addEventListener("click", redo);
+
+/* Ctrl/⌘+Z 되돌리기 · Ctrl/⌘+Shift+Z 또는 Ctrl+Y 다시 실행
+   (글자 입력칸 안에서는 브라우저 기본 동작 유지) */
+document.addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+
+  const key = e.key.toLowerCase();
+  if (key !== "z" && key !== "y") return;
+
+  const el = document.activeElement;
+  if (el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && (el.type === "text" || el.type === "number")))) return;
+  if (cropModal.classList.contains("open")) return;
+
+  e.preventDefault();
+  if (key === "y" || e.shiftKey) redo();
+  else undo();
+});
+
+
+/* ================================
+   브라우저 임시 저장 (IndexedDB, 이미지 포함)
+================================ */
+
+const DB_NAME = "captcha-poster-maker";
+const DB_STORE = "project";
+
+let dbPromise = null;
+
+function openDB() {
+  if (!dbPromise) {
+    dbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  return dbPromise;
+}
+
+function idb(mode, fn) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, mode);
+    const req = fn(tx.objectStore(DB_STORE));
+    tx.oncomplete = () => resolve(req.result);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  }));
+}
+
+/* 이미지마다 한 번만 PNG로 인코딩 */
+const blobCache = new WeakMap();
+
+function imageBlob(canvas) {
+  let p = blobCache.get(canvas);
+  if (!p) {
+    p = new Promise((resolve, reject) => {
+      canvas.toBlob(b => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png");
+    });
+    blobCache.set(canvas, p);
+  }
+  return p;
+}
+
+function clock(t) {
+  return new Date(t).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function setSaveStatus(text, error = false) {
+  const el = document.getElementById("saveStatus");
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = error ? "#c62828" : "";
+}
+
+let saveSeq = 0;
+
+async function saveProject() {
+  const seq = ++saveSeq;
+  const state = clone(S);
+  const list = slots.map(s => ({ ...s }));
+  const bg = bgImage;
+
+  try {
+    const slotData = await Promise.all(list.map(async s => (
+      s.img ? { blob: await imageBlob(s.img), zoom: s.zoom, ox: s.ox, oy: s.oy } : null
+    )));
+    const bgBlob = bg ? await imageBlob(bg) : null;
+
+    if (seq !== saveSeq) return;
+
+    const savedAt = Date.now();
+    await idb("readwrite", st => st.put({ state, slots: slotData, bg: bgBlob, savedAt }, "current"));
+    setSaveStatus(`브라우저에 임시 저장됨 · ${clock(savedAt)}`);
+  } catch (e) {
+    setSaveStatus("임시 저장에 실패했어요. 이 브라우저에서는 저장소를 쓸 수 없어요. JSON으로 저장해 주세요.", true);
+  }
+}
+
+async function restoreProject() {
+  try {
+    const rec = await idb("readonly", st => st.get("current"));
+    if (!rec || !rec.state) return false;
+
+    S = merge(DEFAULTS, rec.state);
+
+    const imgs = await Promise.all((rec.slots || []).map(x => (
+      x ? loadImage(x.blob, 1600).catch(() => null) : null
+    )));
+
+    for (let i = 0; i < 9; i++) {
+      const x = rec.slots && rec.slots[i];
+      const img = imgs[i];
+      slots[i] = img ? { img, zoom: x.zoom, ox: x.ox, oy: x.oy } : emptySlot();
+      if (img) blobCache.set(img, Promise.resolve(x.blob));
+    }
+
+    bgImage = rec.bg ? await loadImage(rec.bg, 3200).catch(() => null) : null;
+    if (bgImage) blobCache.set(bgImage, Promise.resolve(rec.bg));
+
+    setSaveStatus(`임시 저장본을 불러왔어요 · ${clock(rec.savedAt)}`);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+
+/* ================================
+   JSON 저장 · 불러오기 (이미지 포함)
+================================ */
+
+const jsonInput = document.getElementById("jsonInput");
+
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+function blobToDataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+}
+
+function stamp() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+async function exportJSON() {
+  try {
+    const data = {
+      app: "captcha-poster-maker",
+      version: 2,
+      savedAt: new Date().toISOString(),
+      state: clone(S),
+      slots: await Promise.all(slots.map(async s => (
+        s.img ? { src: await blobToDataURL(await imageBlob(s.img)), zoom: s.zoom, ox: s.ox, oy: s.oy } : null
+      ))),
+      background: bgImage ? await blobToDataURL(await imageBlob(bgImage)) : null
+    };
+
+    downloadBlob(
+      new Blob([JSON.stringify(data)], { type: "application/json" }),
+      `captcha-project-${stamp()}.json`
+    );
+  } catch (e) {
+    alert("JSON으로 저장하지 못했어요.");
+  }
+}
+
+async function importJSON(file) {
+  try {
+    const data = JSON.parse(await file.text());
+    if (!data || data.app !== "captcha-poster-maker" || !data.state) throw new Error("format");
+
+    const toImg = async (src, max) => {
+      if (typeof src !== "string" || !src.startsWith("data:image/")) return null;
+      const blob = await (await fetch(src)).blob();
+      return loadImage(blob, max).catch(() => null);
+    };
+
+    const list = Array.from({ length: 9 }, (_, i) => (data.slots || [])[i] || null);
+    const imgs = await Promise.all(list.map(x => (x ? toImg(x.src, 1600) : null)));
+    const bg = data.background ? await toImg(data.background, 3200) : null;
+
+    if (hist.timer) commitHistory();
+
+    S = merge(DEFAULTS, data.state);
+    imgs.forEach((img, i) => {
+      const x = list[i];
+      slots[i] = img ? { img, zoom: +x.zoom || 1, ox: +x.ox || 0, oy: +x.oy || 0 } : emptySlot();
+    });
+    bgImage = bg;
+
+    preview.width = S.canvas.w;
+    preview.height = S.canvas.h;
+    renderThumbs();
+    syncUI();
+    fitPreview();
+    saveSoon();
+  } catch (e) {
+    alert("이 파일은 불러올 수 없어요. 이 사이트에서 저장한 JSON 파일인지 확인해 주세요.");
+  }
+}
+
+jsonInput.addEventListener("change", () => {
+  const file = jsonInput.files[0];
+  jsonInput.value = "";
+  if (file) importJSON(file);
+});
+
+
+/* ================================
+   시작 (스타일시트 · 폰트 선언이 준비된 뒤)
+================================ */
+
+async function start() {
+  buildPanel();
+
+  const restored = await restoreProject();
+
+  preview.width = S.canvas.w;
+  preview.height = S.canvas.h;
+
+  if (!restored && !loaded.saved) fitCard();
+
+  renderThumbs();
   syncUI();
   new ResizeObserver(fitPreview).observe(previewWrap);
   fitPreview();
+  draw();
+  commitHistory();
 
   document.fonts.addEventListener("loadingdone", scheduleRender);
 }
