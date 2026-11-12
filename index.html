@@ -2239,6 +2239,32 @@ function matchPreset(w, h) {
   return Object.keys(PRESETS).find(key => PRESETS[key][0] === w && PRESETS[key][1] === h) || "custom";
 }
 
+function presetRatio() {
+  const [rw, rh] = S.canvas.preset.split(":").map(Number);
+  return rh / rw;
+}
+
+/* 비율이 정해져 있을 때: 가로 또는 세로 하나로 나머지를 계산 (둘 다 200 ~ 4096 안으로) */
+function lockedSize(side, value) {
+  const r = presetRatio();
+  let w = side === "w" ? value : value / r;
+  w = clamp(w, Math.max(200, 200 / r), Math.min(4096, 4096 / r));
+  return [Math.round(w), Math.round(w * r)];
+}
+
+/* 입력하는 동안 다른 칸도 바로 따라 움직임 */
+document.addEventListener("input", e => {
+  const side = e.target.dataset && e.target.dataset.canvas;
+  if (!side || S.canvas.preset === "custom") return;
+
+  const v = parseFloat(e.target.value);
+  if (!Number.isFinite(v) || v <= 0) return;
+
+  const r = presetRatio();
+  const other = side === "w" ? "h" : "w";
+  document.querySelector(`[data-canvas=${other}]`).value = Math.round(side === "w" ? v * r : v / r);
+});
+
 
 /* ================================
    편집 패널 구성
@@ -2323,7 +2349,8 @@ function buildPanel() {
         <span class="unit">×</span>
         <input type="number" class="num wide" data-canvas="h" min="200" max="4096" step="1">
         <span class="unit">px</span>`)}
-      ${H.row("배경", H.seg("bg.mode", [["color", "단색"], ["image", "이미지"]]))}
+      <p class="hint" style="margin-top:-4px">비율을 고르면 가로·세로 중 하나만 바꿔도 나머지가 비율에 맞춰 바뀌어요. 따로 정하려면 ‘직접’을 고르세요.</p>
+      ${H.row("배경", H.seg("bg.mode",[["color", "단색"], ["image", "이미지"]]))}
       <div data-show="bg.mode=color">${H.row("색상", H.color("bg.color"))}</div>
       <div data-show="bg.mode=image" style="display:flex;flex-direction:column;gap:10px">
         <div class="btn-row">
@@ -2415,7 +2442,7 @@ function onChange(path) {
   if (path === "card.x") S.card.hc = false;
   if (path === "card.y") S.card.vc = false;
   if (path === "canvas.preset" && S.canvas.preset !== "custom") {
-    const [w, h] = PRESETS[S.canvas.preset];
+    const [w, h] = lockedSize("w", S.canvas.w);
     applyCanvasSize(w, h, S.canvas.preset);
   }
 }
@@ -2447,9 +2474,15 @@ document.addEventListener("change", e => {
   const el = e.target;
 
   if (el.dataset.canvas) {
-    const w = clamp(Math.round(+document.querySelector("[data-canvas=w]").value || S.canvas.w), 200, 4096);
-    const h = clamp(Math.round(+document.querySelector("[data-canvas=h]").value || S.canvas.h), 200, 4096);
-    applyCanvasSize(w, h, matchPreset(w, h));
+    if (S.canvas.preset !== "custom") {
+      const side = el.dataset.canvas;
+      const [w, h] = lockedSize(side, +el.value || S.canvas[side]);
+      applyCanvasSize(w, h, S.canvas.preset);
+    } else {
+      const w = clamp(Math.round(+document.querySelector("[data-canvas=w]").value || S.canvas.w), 200, 4096);
+      const h = clamp(Math.round(+document.querySelector("[data-canvas=h]").value || S.canvas.h), 200, 4096);
+      applyCanvasSize(w, h, matchPreset(w, h));
+    }
     syncUI();
     saveSoon();
     return;
