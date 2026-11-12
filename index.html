@@ -596,16 +596,53 @@ input.hex {
 .thumb .idx {
   position: absolute;
   left: 5px;
-  top: 4px;
+  bottom: 5px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(0,0,0,.45);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
-  text-shadow: 0 0 3px rgba(0,0,0,.6);
+  line-height: 16px;
+  text-align: center;
 }
 
 .thumb:not(.filled) .idx {
+  background: none;
   color: #a5a5ab;
-  text-shadow: none;
+}
+
+.sel-btn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1.5px solid rgba(255,255,255,.95);
+  border-radius: 50%;
+  background: rgba(0,0,0,.28);
+  color: rgba(255,255,255,.75);
+  cursor: pointer;
+  transition: background .12s, transform .12s;
+}
+
+.sel-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.sel-btn:hover {
+  transform: scale(1.08);
+}
+
+.sel-btn.on {
+  border-color: #fff;
+  background: var(--accent);
+  color: #fff;
 }
 
 .thumb.lifting {
@@ -885,6 +922,11 @@ input.hex {
       </div>
     </div>
 
+    <label class="switch" style="margin-top:12px">
+      <input type="checkbox" id="cropSel">
+      <span>선택됨으로 표시 (체크 배지)</span>
+    </label>
+
     <p class="hint">드래그로 위치 이동 · 휠/핀치로 확대. 사진 비율은 그대로 유지돼요. 이 창을 연 채로 Ctrl+V 하면 복사한 이미지·링크로 교체돼요.</p>
 
     <div class="modal-actions">
@@ -1027,7 +1069,7 @@ const DEFAULTS = {
       color: "#ffffff", align: "left"
     },
     caption: {
-      show: true, text: "A candle glows, a wish flies,\nyour path ahead is full of light.",
+      show: true, text: "Pick every frame that feels like you,\nthen press verify and keep going.",
       font: "pretendard", weight: 400, size: 36, tracking: 0, leading: 1.4,
       color: "#1a1a1a", align: "left", gap: 56
     }
@@ -1098,7 +1140,7 @@ function setPath(path, value) {
 }
 
 function emptySlot() {
-  return { img: null, zoom: 1, ox: 0, oy: 0 };
+  return { img: null, zoom: 1, ox: 0, oy: 0, sel: false };
 }
 
 const slots = Array.from({ length: 9 }, emptySlot);
@@ -1729,11 +1771,52 @@ function drawCard(ctx, L, editor) {
   }
 }
 
+/* 선택됨: 사진을 안쪽으로 줄이고(크롭 구도 유지) 모서리에 체크 배지 */
+function drawTile(ctx, s, x, y, size) {
+  if (!s.sel) {
+    drawCover(ctx, s.img, x, y, size, size, s.zoom, s.ox, s.oy);
+    return;
+  }
+
+  const inset = size * 0.085;
+  drawCover(ctx, s.img, x + inset, y + inset, size - inset * 2, size - inset * 2, s.zoom, s.ox, s.oy);
+  drawCheckBadge(ctx, x + size * 0.1, y + size * 0.1, size * 0.1);
+}
+
+function drawCheckBadge(ctx, cx, cy, r) {
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.16)";
+  ctx.shadowBlur = r * 0.5;
+  ctx.shadowOffsetY = r * 0.08;
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 1.16, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = S.accent;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = r * 0.22;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.4, cy + r * 0.02);
+  ctx.lineTo(cx - r * 0.12, cy + r * 0.3);
+  ctx.lineTo(cx + r * 0.42, cy - r * 0.28);
+  ctx.stroke();
+  ctx.lineCap = "butt";
+  ctx.lineJoin = "miter";
+}
+
 function drawSlot(ctx, i, c, editor) {
   const s = slots[i];
 
   if (s.img) {
-    drawCover(ctx, s.img, c.x, c.y, c.s, c.s, s.zoom, s.ox, s.oy);
+    drawTile(ctx, s, c.x, c.y, c.s);
   } else {
     ctx.fillStyle = "#efeff1";
     ctx.fillRect(c.x, c.y, c.s, c.s);
@@ -2126,8 +2209,16 @@ function renderThumbs() {
       const c = document.createElement("canvas");
       c.width = 180;
       c.height = 180;
-      drawCover(c.getContext("2d"), s.img, 0, 0, 180, 180, s.zoom, s.ox, s.oy);
+      const tc = c.getContext("2d");
+      tc.fillStyle = "#fff";
+      tc.fillRect(0, 0, 180, 180);
+      drawTile(tc, s, 0, 0, 180);
       d.appendChild(c);
+      d.insertAdjacentHTML("beforeend", `
+        <button class="sel-btn${s.sel ? " on" : ""}" type="button" data-sel="${i}"
+          aria-pressed="${!!s.sel}" title="선택됨 표시" style="--accent:${S.accent}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 12.5 4 4 8-9"/></svg>
+        </button>`);
     } else {
       d.insertAdjacentHTML("beforeend", "<span class=\"plus\">+</span>");
     }
@@ -2137,10 +2228,23 @@ function renderThumbs() {
   });
 }
 
+function toggleSelected(i, on = !slots[i].sel) {
+  if (!slots[i].img) return;
+  slots[i] = { ...slots[i], sel: on };
+  renderThumbs();
+  scheduleRender();
+  saveSoon();
+}
+
 function bindThumbs() {
+  thumbsEl.addEventListener("click", e => {
+    const b = e.target.closest(".sel-btn");
+    if (b) toggleSelected(Number(b.dataset.sel));
+  });
+
   thumbsEl.addEventListener("pointerdown", e => {
     const t = e.target.closest(".thumb");
-    if (!t || e.button !== 0) return;
+    if (!t || e.button !== 0 || e.target.closest(".sel-btn")) return;
 
     const from = Number(t.dataset.i);
     const x0 = e.clientX;
@@ -2218,6 +2322,7 @@ function openCrop(i) {
   crop.zoom = s.zoom;
   crop.ox = s.ox;
   crop.oy = s.oy;
+  document.getElementById("cropSel").checked = !!s.sel;
   document.getElementById("cropTitle").textContent = `${i + 1}번 이미지 편집`;
   cropModal.classList.add("open");
   drawCrop();
@@ -2361,7 +2466,13 @@ document.getElementById("cropDelete").addEventListener("click", () => {
 document.getElementById("cropCancel").addEventListener("click", closeCrop);
 
 document.getElementById("cropApply").addEventListener("click", () => {
-  Object.assign(slots[crop.i], { zoom: crop.zoom, ox: crop.ox, oy: crop.oy });
+  slots[crop.i] = {
+    ...slots[crop.i],
+    zoom: crop.zoom,
+    ox: crop.ox,
+    oy: crop.oy,
+    sel: document.getElementById("cropSel").checked
+  };
   closeCrop();
   renderThumbs();
   scheduleRender();
@@ -2641,7 +2752,7 @@ function buildPanel() {
       </div>
       <p class="hint" id="urlStatus">pin.it 링크, 핀 주소, 이미지 주소 모두 돼요(여러 개는 띄어서). 이미지를 복사해 Ctrl+V로 붙여넣어도 빈 칸에 들어가요.</p>
       <div class="thumbs" id="thumbs"></div>
-      <p class="hint">파일 이름 순으로 1번 칸부터 채워요. 칸을 클릭하면 크롭·교체, 드래그하면 두 칸의 순서가 바뀌어요. 미리보기의 칸을 눌러도 편집할 수 있어요.</p>
+      <p class="hint">파일 이름 순으로 1번 칸부터 채워요. 칸을 클릭하면 크롭·교체, 드래그하면 두 칸의 순서가 바뀌어요. 미리보기의 칸을 눌러도 편집할 수 있어요. 썸네일 오른쪽 위 ✓ 버튼으로 ‘선택됨’ 표시를 켜고 끌 수 있어요.</p>
     `)}
 
     ${textSection("sub", "① 헤더 안내 문구", "Select all images with")}
@@ -2680,6 +2791,7 @@ function readInput(el) {
 }
 
 function onChange(path) {
+  if (path === "accent") renderThumbs();
   if (path === "card.x") S.card.hc = false;
   if (path === "card.y") S.card.vc = false;
   if (path === "canvas.preset" && S.canvas.preset !== "custom") {
@@ -3068,7 +3180,7 @@ function takeSnapshot() {
 function sameSnapshot(a, b) {
   return a.s === b.s && a.bg === b.bg && a.slots.every((x, i) => {
     const y = b.slots[i];
-    return x.img === y.img && x.zoom === y.zoom && x.ox === y.ox && x.oy === y.oy;
+    return x.img === y.img && x.zoom === y.zoom && x.ox === y.ox && x.oy === y.oy && !!x.sel === !!y.sel;
   });
 }
 
@@ -3218,7 +3330,7 @@ async function saveProject() {
 
   try {
     const slotData = await Promise.all(list.map(async s => (
-      s.img ? { blob: await imageBlob(s.img), zoom: s.zoom, ox: s.ox, oy: s.oy } : null
+      s.img ? { blob: await imageBlob(s.img), zoom: s.zoom, ox: s.ox, oy: s.oy, sel: !!s.sel } : null
     )));
     const bgBlob = bg ? await imageBlob(bg) : null;
 
@@ -3246,7 +3358,7 @@ async function restoreProject() {
     for (let i = 0; i < 9; i++) {
       const x = rec.slots && rec.slots[i];
       const img = imgs[i];
-      slots[i] = img ? { img, zoom: x.zoom, ox: x.ox, oy: x.oy } : emptySlot();
+      slots[i] = img ? { img, zoom: x.zoom, ox: x.ox, oy: x.oy, sel: !!x.sel } : emptySlot();
       if (img) blobCache.set(img, Promise.resolve(x.blob));
     }
 
@@ -3301,7 +3413,7 @@ async function exportJSON() {
       savedAt: new Date().toISOString(),
       state: clone(S),
       slots: await Promise.all(slots.map(async s => (
-        s.img ? { src: await blobToDataURL(await imageBlob(s.img)), zoom: s.zoom, ox: s.ox, oy: s.oy } : null
+        s.img ? { src: await blobToDataURL(await imageBlob(s.img)), zoom: s.zoom, ox: s.ox, oy: s.oy, sel: !!s.sel } : null
       ))),
       background: bgImage ? await blobToDataURL(await imageBlob(bgImage)) : null
     };
@@ -3335,7 +3447,7 @@ async function importJSON(file) {
     S = merge(DEFAULTS, data.state);
     imgs.forEach((img, i) => {
       const x = list[i];
-      slots[i] = img ? { img, zoom: +x.zoom || 1, ox: +x.ox || 0, oy: +x.oy || 0 } : emptySlot();
+      slots[i] = img ? { img, zoom: +x.zoom || 1, ox: +x.ox || 0, oy: +x.oy || 0, sel: !!x.sel } : emptySlot();
     });
     bgImage = bg;
 
