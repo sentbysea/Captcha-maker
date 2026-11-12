@@ -116,6 +116,96 @@ textarea {
   gap: 6px;
 }
 
+.menu {
+  position: relative;
+}
+
+.menu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.menu-btn:hover,
+.menu-btn[aria-expanded="true"] {
+  background: var(--soft);
+}
+
+.menu-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.menu-btn .chev {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+}
+
+.menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 250px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(0,0,0,.14);
+}
+
+.menu-pop button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-pop button:hover {
+  background: var(--soft);
+}
+
+.menu-pop button span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.menu-pop hr {
+  margin: 6px 4px;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.menu-status,
+.menu-note {
+  margin: 6px 10px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.menu-status {
+  margin-bottom: 8px;
+  color: #4a4a4f;
+}
+
 .icon-btn {
   display: grid;
   place-items: center;
@@ -632,6 +722,25 @@ input.hex {
     display: none;
   }
 
+  .menu-btn {
+    justify-content: center;
+    width: 36px;
+    padding: 0;
+  }
+
+  .menu-btn .label,
+  .menu-btn .chev {
+    display: none;
+  }
+
+  .menu-pop {
+    position: fixed;
+    top: 54px;
+    left: 14px;
+    right: 14px;
+    width: auto;
+  }
+
   .panel {
     flex: none;
     width: auto;
@@ -665,6 +774,31 @@ input.hex {
       </div>
 
       <div class="bar-actions">
+
+        <div class="menu" id="fileMenu">
+
+          <button class="menu-btn" id="fileMenuBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="저장 · 불러오기">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
+              <path d="M14 3v5h5"/>
+            </svg>
+            <span class="label">파일</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+
+          <div class="menu-pop" role="menu" hidden>
+            <p class="menu-status" id="saveStatus">작업 내용은 이미지까지 이 브라우저에 자동으로 임시 저장돼요.</p>
+            <button type="button" role="menuitem" data-act="save-now">지금 임시 저장</button>
+            <button type="button" role="menuitem" data-act="json-export">JSON으로 저장 <span>이미지 포함</span></button>
+            <button type="button" role="menuitem" data-act="json-import">JSON 불러오기</button>
+            <hr>
+            <button type="button" role="menuitem" data-act="new">새로 만들기</button>
+            <p class="menu-note">임시 저장은 이 브라우저에만 남아요. 백업하거나 다른 기기로 옮기려면 JSON으로 저장하세요.</p>
+          </div>
+
+        </div>
 
         <button class="icon-btn" id="undoBtn" type="button" title="되돌리기 (Ctrl+Z)" aria-label="되돌리기" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2294,8 +2428,34 @@ document.getElementById("resultClose").addEventListener("click", () => {
 
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
+  setFileMenu(false);
   if (cropModal.classList.contains("open")) closeCrop();
   resultModal.classList.remove("open");
+});
+
+
+/* ================================
+   상단 파일 메뉴
+================================ */
+
+const fileMenu = document.getElementById("fileMenu");
+const fileMenuBtn = document.getElementById("fileMenuBtn");
+const filePop = fileMenu.querySelector(".menu-pop");
+
+function setFileMenu(open) {
+  filePop.hidden = !open;
+  fileMenuBtn.setAttribute("aria-expanded", String(open));
+}
+
+fileMenuBtn.addEventListener("click", () => setFileMenu(filePop.hidden));
+
+document.addEventListener("pointerdown", e => {
+  if (!fileMenu.contains(e.target)) setFileMenu(false);
+});
+
+/* 항목을 누르면 닫힘 (실제 동작은 data-act 공통 처리) */
+filePop.addEventListener("click", e => {
+  if (e.target.closest("[data-act]")) setFileMenu(false);
 });
 
 
@@ -2419,17 +2579,6 @@ function buildPanel() {
       <h1>CAPTCHA Poster Maker</h1>
       <p>reCAPTCHA 형태의 이미지 포스터를 만들어 PNG로 저장해요.</p>
     </div>
-
-    ${H.sec("저장 · 불러오기", `
-      <p class="hint" id="saveStatus">작업 내용은 이미지까지 이 브라우저에 자동으로 임시 저장돼요.</p>
-      <div class="btn-row">
-        <button class="btn" type="button" data-act="save-now">지금 임시 저장</button>
-        <button class="btn" type="button" data-act="json-export">JSON으로 저장</button>
-        <button class="btn" type="button" data-act="json-import">JSON 불러오기</button>
-        <button class="btn" type="button" data-act="new">새로 만들기</button>
-      </div>
-      <p class="hint">임시 저장은 이 브라우저에만 남아요. 백업하거나 다른 기기로 옮기려면 JSON으로 저장하세요(이미지 포함).</p>
-    `, false)}
 
     ${H.sec("캔버스 · 배경", `
       ${H.row("비율", H.seg("canvas.preset", [["9:16", "9:16"], ["4:5", "4:5"], ["1:1", "1:1"], ["custom", "직접"]]))}
