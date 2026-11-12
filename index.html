@@ -717,6 +717,132 @@ input.hex {
   flex: 1;
 }
 
+.saves-box {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: min(760px, 100%);
+  overflow: hidden;
+}
+
+.saves-box > :not(.saves-list) {
+  flex-shrink: 0;
+}
+
+.saves-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.saves-head h2 {
+  margin: 0;
+}
+
+#savesCount {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.saves-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  margin: 12px -4px 0 0;
+  padding: 0 4px 0 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.save-item {
+  flex-shrink: 0;
+}
+
+.save-item {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.save-item img {
+  display: block;
+  width: 54px;
+  height: 72px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--soft);
+}
+
+.save-info {
+  min-width: 0;
+}
+
+.save-info b {
+  display: block;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-info span {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.save-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.save-actions button {
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.save-actions button:hover {
+  background: var(--soft);
+}
+
+.save-actions .load {
+  border-color: var(--ui);
+  background: var(--ui);
+  color: #fff;
+}
+
+.save-actions .load:hover {
+  background: #000;
+}
+
+.save-actions .danger {
+  color: #c62828;
+}
+
+.saves-empty {
+  padding: 24px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+
 #resultImg {
   display: block;
   width: 100%;
@@ -827,12 +953,13 @@ input.hex {
 
           <div class="menu-pop" role="menu" hidden>
             <p class="menu-status" id="saveStatus">작업 내용은 이미지까지 이 브라우저에 자동으로 임시 저장돼요.</p>
-            <button type="button" role="menuitem" data-act="save-now">지금 임시 저장</button>
+            <button type="button" role="menuitem" data-act="save-now">지금 임시 저장 <span>최대 10개</span></button>
+            <button type="button" role="menuitem" data-act="saves-open">임시 저장함 열기</button>
             <button type="button" role="menuitem" data-act="json-export">JSON으로 저장 <span>이미지 포함</span></button>
             <button type="button" role="menuitem" data-act="json-import">JSON 불러오기</button>
             <hr>
             <button type="button" role="menuitem" data-act="new">새로 만들기</button>
-            <p class="menu-note">임시 저장은 이 브라우저에만 남아요. 백업하거나 다른 기기로 옮기려면 JSON으로 저장하세요.</p>
+            <p class="menu-note">임시 저장은 이 브라우저에만 남아요(최대 10개). 백업하거나 다른 기기로 옮기려면 JSON으로 저장하세요.</p>
           </div>
 
         </div>
@@ -937,6 +1064,29 @@ input.hex {
       <button class="btn" type="button" id="cropCancel">취소</button>
       <button class="primary" type="button" id="cropApply">적용</button>
     </div>
+
+  </div>
+
+</div>
+
+
+
+<!-- 임시 저장함 -->
+
+<div class="modal" id="savesModal">
+
+  <div class="modal-box saves-box">
+
+    <div class="saves-head">
+      <h2>임시 저장함 <span id="savesCount">0/10</span></h2>
+      <button class="btn" type="button" id="savesClose">닫기</button>
+    </div>
+
+    <p class="hint">이 브라우저에 최대 10개까지 보관돼요. 작업 중인 내용은 이와 별도로 계속 자동 저장돼요.</p>
+
+    <button class="primary" type="button" id="saveNewBtn" style="width:100%;margin-top:12px">현재 작업을 새로 저장</button>
+
+    <ul class="saves-list" id="savesList"></ul>
 
   </div>
 
@@ -2540,6 +2690,7 @@ document.getElementById("resultClose").addEventListener("click", () => {
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   setFileMenu(false);
+  closeSaves();
   if (cropModal.classList.contains("open")) closeCrop();
   resultModal.classList.remove("open");
 });
@@ -2879,7 +3030,8 @@ document.addEventListener("click", e => {
     case "bulk": bulkInput.click(); return;
     case "bg-upload": bgInput.click(); return;
     case "bg-remove": bgImage = null; break;
-    case "save-now": persistNow(); return;
+    case "save-now": persistNow(); addSave(); return;
+    case "saves-open": openSaves(); return;
     case "json-export": exportJSON(); return;
     case "json-import": jsonInput.click(); return;
     case "url-add": addLinksFromInput(); return;
@@ -3266,29 +3418,46 @@ document.addEventListener("keydown", e => {
 
 /* ================================
    브라우저 임시 저장 (IndexedDB, 이미지 포함)
+   - current: 작업 중인 내용 자동 저장
+   - saves: 이름 붙여 보관하는 임시 저장함 (최대 10개)
 ================================ */
 
 const DB_NAME = "captcha-poster-maker";
 const DB_STORE = "project";
+const SAVES_STORE = "saves";
+const MAX_SAVES = 10;
 
 let dbPromise = null;
 
 function openDB() {
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE);
-      req.onsuccess = () => resolve(req.result);
+      const req = indexedDB.open(DB_NAME, 2);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
+        if (!db.objectStoreNames.contains(SAVES_STORE)) db.createObjectStore(SAVES_STORE, { keyPath: "id" });
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        /* 다른 탭이 새 버전으로 올리려 하면 연결을 양보 */
+        db.onversionchange = () => {
+          db.close();
+          dbPromise = null;
+        };
+        resolve(db);
+      };
       req.onerror = () => reject(req.error);
+      req.onblocked = () => setSaveStatus("다른 탭에 열린 이 사이트를 닫으면 임시 저장이 이어져요.", true);
     });
   }
   return dbPromise;
 }
 
-function idb(mode, fn) {
+function idb(mode, fn, store = DB_STORE) {
   return openDB().then(db => new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, mode);
-    const req = fn(tx.objectStore(DB_STORE));
+    const tx = db.transaction(store, mode);
+    const req = fn(tx.objectStore(store));
     tx.oncomplete = () => resolve(req.result);
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
@@ -3313,6 +3482,10 @@ function clock(t) {
   return new Date(t).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function dateTime(t) {
+  return new Date(t).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 function setSaveStatus(text, error = false) {
   const el = document.getElementById("saveStatus");
   if (!el) return;
@@ -3320,25 +3493,59 @@ function setSaveStatus(text, error = false) {
   el.style.color = error ? "#c62828" : "";
 }
 
+/* 지금 상태 → 저장용 레코드 */
+async function buildRecord() {
+  const state = clone(S);
+  const list = slots.map(x => ({ ...x }));
+  const bg = bgImage;
+
+  const slotData = await Promise.all(list.map(async x => (
+    x.img ? { blob: await imageBlob(x.img), zoom: x.zoom, ox: x.ox, oy: x.oy, sel: !!x.sel } : null
+  )));
+
+  return { state, slots: slotData, bg: bg ? await imageBlob(bg) : null };
+}
+
+/* 저장용 레코드 → 지금 상태 (화면 갱신은 refreshAll) */
+async function applyRecord(rec) {
+  const imgs = await Promise.all((rec.slots || []).map(x => (
+    x ? loadImage(x.blob, 1600).catch(() => null) : null
+  )));
+  const bg = rec.bg ? await loadImage(rec.bg, 3200).catch(() => null) : null;
+
+  S = merge(DEFAULTS, rec.state);
+
+  for (let i = 0; i < 9; i++) {
+    const x = rec.slots && rec.slots[i];
+    const img = imgs[i];
+    slots[i] = img ? { img, zoom: x.zoom, ox: x.ox, oy: x.oy, sel: !!x.sel } : emptySlot();
+    if (img) blobCache.set(img, Promise.resolve(x.blob));
+  }
+
+  bgImage = bg;
+  if (bg) blobCache.set(bg, Promise.resolve(rec.bg));
+}
+
+function refreshAll() {
+  preview.width = S.canvas.w;
+  preview.height = S.canvas.h;
+  renderThumbs();
+  syncUI();
+  fitPreview();
+}
+
 let saveSeq = 0;
 
 async function saveProject() {
   const seq = ++saveSeq;
-  const state = clone(S);
-  const list = slots.map(s => ({ ...s }));
-  const bg = bgImage;
 
   try {
-    const slotData = await Promise.all(list.map(async s => (
-      s.img ? { blob: await imageBlob(s.img), zoom: s.zoom, ox: s.ox, oy: s.oy, sel: !!s.sel } : null
-    )));
-    const bgBlob = bg ? await imageBlob(bg) : null;
-
+    const rec = await buildRecord();
     if (seq !== saveSeq) return;
 
     const savedAt = Date.now();
-    await idb("readwrite", st => st.put({ state, slots: slotData, bg: bgBlob, savedAt }, "current"));
-    setSaveStatus(`브라우저에 임시 저장됨 · ${clock(savedAt)}`);
+    await idb("readwrite", st => st.put({ ...rec, savedAt }, "current"));
+    setSaveStatus(`작업 중인 내용 자동 저장됨 · ${clock(savedAt)}`);
   } catch (e) {
     setSaveStatus("임시 저장에 실패했어요. 이 브라우저에서는 저장소를 쓸 수 없어요. JSON으로 저장해 주세요.", true);
   }
@@ -3349,28 +3556,197 @@ async function restoreProject() {
     const rec = await idb("readonly", st => st.get("current"));
     if (!rec || !rec.state) return false;
 
-    S = merge(DEFAULTS, rec.state);
-
-    const imgs = await Promise.all((rec.slots || []).map(x => (
-      x ? loadImage(x.blob, 1600).catch(() => null) : null
-    )));
-
-    for (let i = 0; i < 9; i++) {
-      const x = rec.slots && rec.slots[i];
-      const img = imgs[i];
-      slots[i] = img ? { img, zoom: x.zoom, ox: x.ox, oy: x.oy, sel: !!x.sel } : emptySlot();
-      if (img) blobCache.set(img, Promise.resolve(x.blob));
-    }
-
-    bgImage = rec.bg ? await loadImage(rec.bg, 3200).catch(() => null) : null;
-    if (bgImage) blobCache.set(bgImage, Promise.resolve(rec.bg));
-
-    setSaveStatus(`임시 저장본을 불러왔어요 · ${clock(rec.savedAt)}`);
+    await applyRecord(rec);
+    setSaveStatus(`작업 중이던 내용을 불러왔어요 · ${clock(rec.savedAt)}`);
     return true;
   } catch (e) {
     return false;
   }
 }
+
+
+/* ================================
+   임시 저장함 (최대 10개)
+================================ */
+
+const savesModal = document.getElementById("savesModal");
+const savesList = document.getElementById("savesList");
+const saveNewBtn = document.getElementById("saveNewBtn");
+
+let thumbURLs = [];
+
+async function listSaves() {
+  const all = await idb("readonly", st => st.getAll(), SAVES_STORE);
+  return (all || []).sort((a, b) => b.savedAt - a.savedAt);
+}
+
+/* 목록에 보여줄 작은 미리보기 (실제 저장 결과와 같은 렌더) */
+async function makeThumb() {
+  const c = document.createElement("canvas");
+  c.width = S.canvas.w;
+  c.height = S.canvas.h;
+  renderScene(c.getContext("2d"), false);
+
+  const t = document.createElement("canvas");
+  t.width = 120;
+  t.height = Math.round(120 * c.height / c.width);
+  const tc = t.getContext("2d");
+  tc.imageSmoothingQuality = "high";
+  tc.drawImage(c, 0, 0, t.width, t.height);
+
+  return new Promise(resolve => t.toBlob(resolve, "image/jpeg", 0.85));
+}
+
+function defaultSaveName() {
+  const line = (S.texts.title.text || "").split("\n").map(v => v.trim()).find(Boolean) || "제목 없음";
+  return line.length > 28 ? `${line.slice(0, 28)}…` : line;
+}
+
+async function addSave(overwriteId = null) {
+  try {
+    const saves = await listSaves();
+
+    if (!overwriteId && saves.length >= MAX_SAVES) {
+      alert(`임시 저장은 ${MAX_SAVES}개까지예요. 안 쓰는 저장을 지우거나 덮어써 주세요.`);
+      openSaves();
+      return false;
+    }
+
+    const prev = overwriteId && saves.find(x => x.id === overwriteId);
+    const [rec, thumb] = await Promise.all([buildRecord(), makeThumb()]);
+    const item = {
+      ...rec,
+      id: overwriteId || `s${Date.now()}`,
+      name: prev ? prev.name : defaultSaveName(),
+      savedAt: Date.now(),
+      thumb
+    };
+
+    await idb("readwrite", st => st.put(item), SAVES_STORE);
+    setSaveStatus(`임시 저장함에 저장했어요 · ${clock(item.savedAt)} (${saves.length + (prev ? 0 : 1)}/${MAX_SAVES})`);
+    if (savesModal.classList.contains("open")) renderSaves();
+    return true;
+  } catch (e) {
+    alert("임시 저장에 실패했어요. 브라우저 저장 공간이 부족할 수 있어요.");
+    return false;
+  }
+}
+
+async function loadSave(id) {
+  try {
+    const rec = await idb("readonly", st => st.get(id), SAVES_STORE);
+    if (!rec) return;
+
+    if (hist.timer) commitHistory();
+    await applyRecord(rec);
+    refreshAll();
+    saveSoon();
+    closeSaves();
+    setSaveStatus(`‘${rec.name}’을(를) 불러왔어요`);
+  } catch (e) {
+    alert("불러오지 못했어요.");
+  }
+}
+
+async function renameSave(id) {
+  const rec = await idb("readonly", st => st.get(id), SAVES_STORE);
+  if (!rec) return;
+  const name = prompt("저장 이름", rec.name);
+  if (name === null || !name.trim()) return;
+  await idb("readwrite", st => st.put({ ...rec, name: name.trim().slice(0, 40) }), SAVES_STORE);
+  renderSaves();
+}
+
+async function deleteSave(id, name) {
+  if (!confirm(`‘${name}’ 임시 저장을 지울까요?`)) return;
+  await idb("readwrite", st => st.delete(id), SAVES_STORE);
+  renderSaves();
+}
+
+async function renderSaves() {
+  let saves = [];
+  try { saves = await listSaves(); } catch (e) {}
+
+  thumbURLs.forEach(u => URL.revokeObjectURL(u));
+  thumbURLs = [];
+
+  document.getElementById("savesCount").textContent = `${saves.length}/${MAX_SAVES}`;
+  saveNewBtn.disabled = saves.length >= MAX_SAVES;
+  saveNewBtn.textContent = saves.length >= MAX_SAVES
+    ? "가득 찼어요 · 지우거나 덮어쓰기"
+    : "현재 작업을 새로 저장";
+
+  savesList.innerHTML = "";
+
+  if (!saves.length) {
+    savesList.innerHTML = "<li class=\"saves-empty\">아직 저장한 작업이 없어요.</li>";
+    return;
+  }
+
+  for (const item of saves) {
+    const li = document.createElement("li");
+    li.className = "save-item";
+
+    const img = document.createElement("img");
+    img.alt = "";
+    if (item.thumb) {
+      const url = URL.createObjectURL(item.thumb);
+      thumbURLs.push(url);
+      img.src = url;
+    }
+
+    const info = document.createElement("div");
+    info.className = "save-info";
+
+    const name = document.createElement("b");
+    name.textContent = item.name;
+
+    const meta = document.createElement("span");
+    const count = (item.slots || []).filter(Boolean).length;
+    meta.textContent = `${dateTime(item.savedAt)} · 이미지 ${count}장 · ${item.state.canvas.w}×${item.state.canvas.h}`;
+
+    const actions = document.createElement("div");
+    actions.className = "save-actions";
+    actions.innerHTML = `
+      <button type="button" class="load" data-save-act="load">불러오기</button>
+      <button type="button" data-save-act="overwrite">덮어쓰기</button>
+      <button type="button" data-save-act="rename">이름</button>
+      <button type="button" class="danger" data-save-act="delete">삭제</button>`;
+
+    actions.addEventListener("click", async e => {
+      const act = e.target.closest("[data-save-act]");
+      if (!act) return;
+      switch (act.dataset.saveAct) {
+        case "load": loadSave(item.id); break;
+        case "overwrite":
+          if (confirm(`‘${item.name}’을(를) 지금 작업으로 덮어쓸까요?`)) addSave(item.id);
+          break;
+        case "rename": renameSave(item.id); break;
+        case "delete": deleteSave(item.id, item.name); break;
+      }
+    });
+
+    info.append(name, meta, actions);
+    li.append(img, info);
+    savesList.appendChild(li);
+  }
+}
+
+function openSaves() {
+  savesModal.classList.add("open");
+  renderSaves();
+}
+
+function closeSaves() {
+  savesModal.classList.remove("open");
+}
+
+saveNewBtn.addEventListener("click", () => addSave());
+document.getElementById("savesClose").addEventListener("click", closeSaves);
+
+savesModal.addEventListener("pointerdown", e => {
+  if (e.target === savesModal) closeSaves();
+});
 
 
 /* ================================
@@ -3451,11 +3827,7 @@ async function importJSON(file) {
     });
     bgImage = bg;
 
-    preview.width = S.canvas.w;
-    preview.height = S.canvas.h;
-    renderThumbs();
-    syncUI();
-    fitPreview();
+    refreshAll();
     saveSoon();
   } catch (e) {
     alert("이 파일은 불러올 수 없어요. 이 사이트에서 저장한 JSON 파일인지 확인해 주세요.");
