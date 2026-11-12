@@ -747,6 +747,45 @@ input.hex {
   font-weight: 500;
 }
 
+.save-form,
+.save-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.save-form {
+  margin-top: 12px;
+}
+
+.save-form textarea,
+.save-edit textarea {
+  min-height: 0;
+  resize: none;
+}
+
+.save-edit input[type="text"] {
+  height: 28px;
+  font-size: 12.5px;
+}
+
+.save-edit textarea {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.save-memo {
+  display: -webkit-box;
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: #4a4a4f;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .saves-list {
   display: flex;
   flex: 1;
@@ -1084,7 +1123,11 @@ input.hex {
 
     <p class="hint">이 브라우저에 최대 10개까지 보관돼요. 작업 중인 내용은 이와 별도로 계속 자동 저장돼요.</p>
 
-    <button class="primary" type="button" id="saveNewBtn" style="width:100%;margin-top:12px">현재 작업을 새로 저장</button>
+    <form class="save-form" id="saveForm">
+      <input type="text" id="saveName" maxlength="40" placeholder="제목" autocomplete="off">
+      <textarea id="saveMemo" rows="2" maxlength="300" placeholder="메모 (선택)"></textarea>
+      <button class="primary" type="submit" id="saveNewBtn">현재 작업 저장</button>
+    </form>
 
     <ul class="saves-list" id="savesList"></ul>
 
@@ -3030,7 +3073,7 @@ document.addEventListener("click", e => {
     case "bulk": bulkInput.click(); return;
     case "bg-upload": bgInput.click(); return;
     case "bg-remove": bgImage = null; break;
-    case "save-now": persistNow(); addSave(); return;
+    case "save-now": persistNow(); openSaves(true); return;
     case "saves-open": openSaves(); return;
     case "json-export": exportJSON(); return;
     case "json-import": jsonInput.click(); return;
@@ -3572,6 +3615,9 @@ async function restoreProject() {
 const savesModal = document.getElementById("savesModal");
 const savesList = document.getElementById("savesList");
 const saveNewBtn = document.getElementById("saveNewBtn");
+const saveForm = document.getElementById("saveForm");
+const saveName = document.getElementById("saveName");
+const saveMemo = document.getElementById("saveMemo");
 
 let thumbURLs = [];
 
@@ -3602,13 +3648,12 @@ function defaultSaveName() {
   return line.length > 28 ? `${line.slice(0, 28)}…` : line;
 }
 
-async function addSave(overwriteId = null) {
+async function addSave(overwriteId = null, meta = {}) {
   try {
     const saves = await listSaves();
 
     if (!overwriteId && saves.length >= MAX_SAVES) {
       alert(`임시 저장은 ${MAX_SAVES}개까지예요. 안 쓰는 저장을 지우거나 덮어써 주세요.`);
-      openSaves();
       return false;
     }
 
@@ -3617,7 +3662,8 @@ async function addSave(overwriteId = null) {
     const item = {
       ...rec,
       id: overwriteId || `s${Date.now()}`,
-      name: prev ? prev.name : defaultSaveName(),
+      name: prev ? prev.name : ((meta.name || "").trim().slice(0, 40) || defaultSaveName()),
+      memo: prev ? (prev.memo || "") : (meta.memo || "").trim().slice(0, 300),
       savedAt: Date.now(),
       thumb
     };
@@ -3648,13 +3694,52 @@ async function loadSave(id) {
   }
 }
 
-async function renameSave(id) {
+async function updateSaveMeta(id, name, memo) {
   const rec = await idb("readonly", st => st.get(id), SAVES_STORE);
   if (!rec) return;
-  const name = prompt("저장 이름", rec.name);
-  if (name === null || !name.trim()) return;
-  await idb("readwrite", st => st.put({ ...rec, name: name.trim().slice(0, 40) }), SAVES_STORE);
+  await idb("readwrite", st => st.put({
+    ...rec,
+    name: name.trim().slice(0, 40) || rec.name,
+    memo: memo.trim().slice(0, 300)
+  }), SAVES_STORE);
   renderSaves();
+}
+
+/* 목록 안에서 바로 제목 · 메모 고치기 */
+function editSaveInline(item, info) {
+  info.innerHTML = "";
+
+  const form = document.createElement("form");
+  form.className = "save-edit";
+
+  const name = document.createElement("input");
+  name.type = "text";
+  name.maxLength = 40;
+  name.value = item.name;
+  name.placeholder = "제목";
+
+  const memo = document.createElement("textarea");
+  memo.rows = 2;
+  memo.maxLength = 300;
+  memo.value = item.memo || "";
+  memo.placeholder = "메모 (선택)";
+
+  const actions = document.createElement("div");
+  actions.className = "save-actions";
+  actions.innerHTML = `
+    <button type="submit" class="load">저장</button>
+    <button type="button" data-cancel>취소</button>`;
+
+  form.append(name, memo, actions);
+  info.appendChild(form);
+  name.focus();
+  name.select();
+
+  form.addEventListener("submit", e => {
+    e.preventDefault();
+    updateSaveMeta(item.id, name.value, memo.value);
+  });
+  actions.querySelector("[data-cancel]").addEventListener("click", () => renderSaves());
 }
 
 async function deleteSave(id, name) {
@@ -3671,10 +3756,11 @@ async function renderSaves() {
   thumbURLs = [];
 
   document.getElementById("savesCount").textContent = `${saves.length}/${MAX_SAVES}`;
-  saveNewBtn.disabled = saves.length >= MAX_SAVES;
-  saveNewBtn.textContent = saves.length >= MAX_SAVES
-    ? "가득 찼어요 · 지우거나 덮어쓰기"
-    : "현재 작업을 새로 저장";
+  const full = saves.length >= MAX_SAVES;
+  saveNewBtn.disabled = full;
+  saveName.disabled = full;
+  saveMemo.disabled = full;
+  saveNewBtn.textContent = full ? "가득 찼어요 · 지우거나 덮어쓰기" : "현재 작업 저장";
 
   savesList.innerHTML = "";
 
@@ -3705,12 +3791,17 @@ async function renderSaves() {
     const count = (item.slots || []).filter(Boolean).length;
     meta.textContent = `${dateTime(item.savedAt)} · 이미지 ${count}장 · ${item.state.canvas.w}×${item.state.canvas.h}`;
 
+    const memo = document.createElement("p");
+    memo.className = "save-memo";
+    memo.textContent = item.memo || "";
+    memo.hidden = !item.memo;
+
     const actions = document.createElement("div");
     actions.className = "save-actions";
     actions.innerHTML = `
       <button type="button" class="load" data-save-act="load">불러오기</button>
       <button type="button" data-save-act="overwrite">덮어쓰기</button>
-      <button type="button" data-save-act="rename">이름</button>
+      <button type="button" data-save-act="edit">편집</button>
       <button type="button" class="danger" data-save-act="delete">삭제</button>`;
 
     actions.addEventListener("click", async e => {
@@ -3721,27 +3812,47 @@ async function renderSaves() {
         case "overwrite":
           if (confirm(`‘${item.name}’을(를) 지금 작업으로 덮어쓸까요?`)) addSave(item.id);
           break;
-        case "rename": renameSave(item.id); break;
+        case "edit": editSaveInline(item, info); break;
         case "delete": deleteSave(item.id, item.name); break;
       }
     });
 
-    info.append(name, meta, actions);
+    info.append(name, meta, memo, actions);
     li.append(img, info);
     savesList.appendChild(li);
   }
 }
 
-function openSaves() {
+function openSaves(focusForm = false) {
+  saveName.value = defaultSaveName();
+  saveMemo.value = "";
   savesModal.classList.add("open");
-  renderSaves();
+  renderSaves().then(() => {
+    if (focusForm && !saveName.disabled) {
+      saveName.focus();
+      saveName.select();
+    }
+  });
 }
 
 function closeSaves() {
   savesModal.classList.remove("open");
 }
 
-saveNewBtn.addEventListener("click", () => addSave());
+saveForm.addEventListener("submit", async e => {
+  e.preventDefault();
+  if (saveNewBtn.disabled) return;
+
+  saveNewBtn.disabled = true;
+  saveNewBtn.textContent = "저장 중…";
+
+  const ok = await addSave(null, { name: saveName.value, memo: saveMemo.value });
+  if (ok) {
+    saveName.value = defaultSaveName();
+    saveMemo.value = "";
+  }
+  renderSaves();
+});
 document.getElementById("savesClose").addEventListener("click", closeSaves);
 
 savesModal.addEventListener("pointerdown", e => {
