@@ -244,7 +244,7 @@ textarea {
 
 .row {
   display: grid;
-  grid-template-columns: 60px 1fr;
+  grid-template-columns: 74px 1fr;
   align-items: center;
   gap: 10px;
   min-height: 30px;
@@ -873,7 +873,10 @@ const HAS_LS =
 
 const DEFAULTS = {
   canvas: { preset: "9:16", w: 1080, h: 1920 },
-  bg: { mode: "color", color: "#ffffff", zoom: 1, x: 0, y: 0 },
+  bg: {
+    mode: "color", color: "#ffffff", zoom: 1, x: 0, y: 0,
+    blur: 0, overlayColor: "#000000", overlay: 0
+  },
   card: { width: 800, x: 140, y: 0, hc: true, vc: true },
   accent: "#4a90e2",
   verifyLabel: "VERIFY",
@@ -1023,6 +1026,78 @@ function drawCover(ctx, img, x, y, w, h, zoom, ox, oy) {
   ctx.drawImage(img, r.x, r.y, r.w, r.h);
   ctx.restore();
 }
+
+/* ================================
+   배경 블러
+   - 브라우저마다 지원이 다른 ctx.filter 대신 직접 계산 → 미리보기 · 저장 · 기기 간 동일
+   - 강도 100 = 캔버스 너비의 4% (출력 크기를 바꿔도 같은 느낌)
+   - 가장자리를 바깥으로 늘린 뒤 흐려서 테두리가 어두워지지 않게 함
+   - 흐린 결과는 원본 픽셀이 필요 없으므로 줄인 크기에서 계산 후 확대
+================================ */
+
+const bgBlurCache = { img: null, key: "", layer: null };
+
+function blurredBackground(W, H) {
+  const sigma = S.bg.blur / 100 * 0.04 * W;
+  const key = [W, H, S.bg.zoom, S.bg.x, S.bg.y, S.bg.blur].join("|");
+
+  if (bgBlurCache.img === bgImage && bgBlurCache.key === key) return bgBlurCache.layer;
+
+  const f = Math.max(3, sigma / 5);
+  const r = Math.max(1, Math.round(sigma / f));
+  const m = r * 3;
+  const sw = Math.max(1, Math.round(W / f));
+  const sh = Math.max(1, Math.round(H / f));
+
+  const c = document.createElement("canvas");
+  c.width = sw + 2 * m;
+  c.height = sh + 2 * m;
+  const x = c.getContext("2d");
+
+  drawCover(x, bgImage, m, m, sw, sh, S.bg.zoom, S.bg.x / 100, S.bg.y / 100);
+
+  /* 가장자리 한 줄을 여백만큼 늘림 (위 · 아래 → 왼쪽 · 오른쪽 순서라 모서리도 채워짐) */
+  x.drawImage(c, m, m, sw, 1, m, 0, sw, m);
+  x.drawImage(c, m, m + sh - 1, sw, 1, m, m + sh, sw, m);
+  x.drawImage(c, m, 0, 1, c.height, 0, 0, m, c.height);
+  x.drawImage(c, m + sw - 1, 0, 1, c.height, m + sw, 0, m, c.height);
+
+  const img = x.getImageData(0, 0, c.width, c.height);
+  const tmp = new Uint8ClampedArray(img.data.length);
+
+  /* 박스 블러 3회 ≈ 가우시안 */
+  for (let n = 0; n < 3; n++) {
+    boxPass(img.data, tmp, c.width, c.height, r, 4, c.width * 4);
+    boxPass(tmp, img.data, c.height, c.width, r, c.width * 4, 4);
+  }
+
+  x.putImageData(img, 0, 0);
+
+  const layer = { canvas: c, m, sw, sh };
+  Object.assign(bgBlurCache, { img: bgImage, key, layer });
+  return layer;
+}
+
+/* 한 방향 박스 블러: len 픽셀짜리 줄이 lines개, step = 픽셀 간격, stride = 줄 간격 (끝은 가장자리 값 반복) */
+function boxPass(src, dst, len, lines, r, step, stride) {
+  const d = 2 * r + 1;
+  const last = len - 1;
+
+  for (let line = 0; line < lines; line++) {
+    const base = line * stride;
+
+    for (let ch = 0; ch < 4; ch++) {
+      let sum = 0;
+      for (let i = -r; i <= r; i++) sum += src[base + clamp(i, 0, last) * step + ch];
+
+      for (let i = 0; i < len; i++) {
+        dst[base + i * step + ch] = sum / d;
+        sum += src[base + Math.min(i + r + 1, last) * step + ch] - src[base + Math.max(i - r, 0) * step + ch];
+      }
+    }
+  }
+}
+
 
 /* 인라인 SVG 아이콘 → Path2D */
 const ICONS = {};
@@ -1306,7 +1381,21 @@ function renderScene(ctx, editor) {
   ctx.fillRect(0, 0, W, H);
 
   if (S.bg.mode === "image" && bgImage) {
-    drawCover(ctx, bgImage, 0, 0, W, H, S.bg.zoom, S.bg.x / 100, S.bg.y / 100);
+    if (S.bg.blur > 0) {
+      const layer = blurredBackground(W, H);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(layer.canvas, layer.m, layer.m, layer.sw, layer.sh, 0, 0, W, H);
+    } else {
+      drawCover(ctx, bgImage, 0, 0, W, H, S.bg.zoom, S.bg.x / 100, S.bg.y / 100);
+    }
+
+    if (S.bg.overlay > 0) {
+      ctx.globalAlpha = S.bg.overlay / 100;
+      ctx.fillStyle = S.bg.overlayColor;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
   }
 
   /* 뒤쪽 로봇 바 → 캡챠 카드 → 하단 문구 */
@@ -2364,6 +2453,9 @@ function buildPanel() {
           ${H.row("가로 위치", H.range("bg.x", -100, 100, 1))}
           ${H.row("세로 위치", H.range("bg.y", -100, 100, 1))}
           <p class="hint">미리보기에서 카드 바깥을 드래그해도 배경이 움직여요.</p>
+          ${H.row("블러", H.range("bg.blur", 0, 100, 1))}
+          ${H.row("오버레이", H.color("bg.overlayColor"))}
+          ${H.row("오버레이 강도", H.range("bg.overlay", 0, 100, 1, "%"))}
         </div>
       </div>
     `)}
